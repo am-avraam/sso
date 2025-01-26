@@ -118,14 +118,16 @@
         "webOrigins": ["http://localhost:3000"],
         "directAccessGrantsEnabled": true,
         "standardFlowEnabled": true,
-        "pkceCodeChallengeMethod": "S256"
+        "attributes": {
+          "pkce.code.challenge.method": "S256"
+        }
       },
       {
         "clientId": "reports-api",
         "enabled": true,
         "clientAuthenticatorType": "client-secret",
-        "secret": "oNwoLQdvJAvRcL89SydqCWCe5ry1jMgq", 
-        "bearerOnly": true
+        "secret": "oNwoLQdvJAvRcL89SydqCWCe5ry1jMgq",
+        "bearerOnly": false
       }
     ]
   }

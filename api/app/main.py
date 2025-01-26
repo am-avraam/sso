@@ -2,9 +2,11 @@ from fastapi import FastAPI, Depends, HTTPException, Security
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from jose import jwt, JWTError
+import httpx
 import random
 from datetime import datetime
 from typing import List, Dict
+import os
 
 app = FastAPI()
 
@@ -20,35 +22,48 @@ app.add_middleware(
 security = HTTPBearer()
 
 # Настройки Keycloak
-KEYCLOAK_PUBLIC_KEY = """-----BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA...
------END PUBLIC KEY-----""" 
-KEYCLOAK_ALGORITHM = "RS256"
-KEYCLOAK_ISSUER = "http://localhost:8080/realms/reports-realm"
+KEYCLOAK_URL = os.getenv("KEYCLOAK_URL", "http://keycloak:8080")
+KEYCLOAK_REALM = "reports-realm"
 
-def verify_token(credentials: HTTPAuthorizationCredentials = Security(security)):
+async def verify_token(credentials: HTTPAuthorizationCredentials = Security(security)):
     try:
         token = credentials.credentials
-        payload = jwt.decode(
-            token,
-            KEYCLOAK_PUBLIC_KEY,
-            algorithms=[KEYCLOAK_ALGORITHM],
-            issuer=KEYCLOAK_ISSUER
-        )
         
-        # Проверяем наличие роли prothetic_user
-        realm_access = payload.get("realm_access", {})
-        roles = realm_access.get("roles", [])
-        
-        if "prothetic_user" not in roles:
-            raise HTTPException(
-                status_code=403,
-                detail="У пользователя отсутствует необходимая роль"
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{KEYCLOAK_URL}/realms/{KEYCLOAK_REALM}/protocol/openid-connect/certs"
+            )
+            if response.status_code != 200:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Не удалось получить ключ для проверки токена"
+                )
+            
+            keys = response.json()
+            # Берем первый ключ из набора ключей
+            key = keys['keys'][0]
+            
+            # Проверяем JWT токен
+            payload = jwt.decode(
+                token,
+                key,
+                algorithms=["RS256"],
+                audience="reports-frontend"  # Важно: указываем правильный client_id
             )
             
-        return payload
-        
-    except JWTError:
+            # Проверяем наличие роли prothetic_user
+            realm_access = payload.get("realm_access", {})
+            roles = realm_access.get("roles", [])
+            
+            if "prothetic_user" not in roles:
+                raise HTTPException(
+                    status_code=403,
+                    detail="У пользователя отсутствует необходимая роль"
+                )
+                
+            return payload
+            
+    except JWTError as e:
         raise HTTPException(
             status_code=401,
             detail="Недействительный токен аутентификации"
